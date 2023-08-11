@@ -110,6 +110,24 @@ impl Request {
         }
     }
 
+    fn calculate_deadline(&self) -> Result<Option<crate::request::time::Instant>> {
+        match self.timeout.or(self.agent.config.timeout) {
+            None => Ok(None),
+            Some(timeout) => {
+                let now = time::Instant::now();
+                match now.checked_add(timeout) {
+                    Some(dl) => Ok(Some(dl)),
+                    None => {
+                        return Err(Error::new(
+                            ErrorKind::Io,
+                            Some("Request deadline overflowed".to_string()),
+                        ))
+                    }
+                }
+            }
+        }
+    }
+
     #[cfg_attr(not(any(feature = "gzip", feature = "brotli")), allow(unused_mut))]
     fn do_call(mut self, payload: Payload) -> Result<Response> {
         for h in &self.headers {
@@ -120,21 +138,7 @@ impl Request {
         #[cfg(any(feature = "gzip", feature = "brotli"))]
         self.add_accept_encoding();
 
-        let deadline = match self.timeout.or(self.agent.config.timeout) {
-            None => None,
-            Some(timeout) => {
-                let now = time::Instant::now();
-                match now.checked_add(timeout) {
-                    Some(dl) => Some(dl),
-                    None => {
-                        return Err(Error::new(
-                            ErrorKind::Io,
-                            Some("Request deadline overflowed".to_string()),
-                        ))
-                    }
-                }
-            }
-        };
+        let deadline = self.calculate_deadline()?;
 
         let request_fn = |req: Request| {
             let reader = payload.into_read();
