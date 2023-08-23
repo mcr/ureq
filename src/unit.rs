@@ -238,22 +238,17 @@ pub(crate) fn connect(
     Ok(resp)
 }
 
-/// Perform a connection. Does not follow redirects.
-fn connect_inner(
+/// Send request, process redirects/errors, return Response.
+fn send_receive(
     unit: &Unit,
-    use_pooled: bool,
+    mut stream: Stream,
+    is_recycled: bool,
     body: SizedReader,
     history: &[Url],
 ) -> Result<Response, Error> {
-    let host = unit
-        .url
-        .host_str()
-        // This unwrap is ok because Request::parse_url() ensure there is always a host present.
-        .unwrap();
+
     let url = &unit.url;
     let method = &unit.method;
-    // open socket
-    let (mut stream, is_recycled) = connect_socket(unit, host, use_pooled)?;
 
     if is_recycled {
         debug!("sending request (reused connection) {} {}", method, url);
@@ -316,6 +311,25 @@ fn connect_inner(
     // release the response
     Ok(resp)
 }
+
+/// Perform a connection. Does not follow redirects.
+fn connect_inner(
+    unit: &Unit,
+    use_pooled: bool,
+    body: SizedReader,
+    history: &[Url],
+) -> Result<Response, Error> {
+    let host = unit
+        .url
+        .host_str()
+        // This unwrap is ok because Request::parse_url() ensure there is always a host present.
+        .unwrap();
+    // open socket
+    let (stream, is_recycled) = connect_socket(unit, host, use_pooled)?;
+
+    return send_receive(unit, stream, is_recycled, body, history);
+}
+
 
 #[cfg(feature = "cookies")]
 fn extract_cookies(agent: &Agent, url: &Url) -> Option<Header> {
