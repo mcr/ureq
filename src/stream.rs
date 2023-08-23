@@ -195,6 +195,17 @@ impl Stream {
         })
     }
 
+    pub(crate) fn new_with_socket(
+        t: impl ReadWrite,
+        remote_addr: SocketAddr,
+    ) -> Stream {
+        Stream::logged_create(Stream {
+            inner: BufReader::new(Box::new(t)),
+            remote_addr: remote_addr,
+            pool_returner: PoolReturner::none(),
+        })
+    }
+
     fn logged_create(stream: Stream) -> Stream {
         debug!("created stream: {:?}", stream);
         stream

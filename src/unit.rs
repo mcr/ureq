@@ -239,7 +239,7 @@ pub(crate) fn connect(
 }
 
 /// Send request, process redirects/errors, return Response.
-fn send_receive(
+pub(crate) fn send_receive(
     unit: &Unit,
     mut stream: Stream,
     is_recycled: bool,
@@ -313,7 +313,7 @@ fn send_receive(
 }
 
 /// Perform a connection. Does not follow redirects.
-fn connect_inner(
+pub(crate) fn connect_inner(
     unit: &Unit,
     use_pooled: bool,
     body: SizedReader,

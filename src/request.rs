@@ -1,5 +1,6 @@
 use std::io::Read;
 use std::{fmt, time};
+use std::net::SocketAddr;
 
 use url::{form_urlencoded, ParseError, Url};
 
@@ -8,8 +9,10 @@ use crate::body::Payload;
 use crate::error::{Error, ErrorKind};
 use crate::header::{self, Header};
 use crate::middleware::MiddlewareNext;
-use crate::unit::{self, Unit};
+use crate::unit::{self, Unit, send_receive};
+use crate::stream::Stream;
 use crate::Response;
+use crate::ReadWrite;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -129,6 +132,61 @@ impl Request {
     }
 
     #[cfg_attr(not(any(feature = "gzip", feature = "brotli")), allow(unused_mut))]
+    fn do_call1(mut self, payload: Payload, iostream: impl ReadWrite, dst_addr: SocketAddr) -> Result<Response> {
+        for h in &self.headers {
+            h.validate()?;
+        }
+
+        // do not use parse_url(), because in this case, no Host is fine
+        let url = self.url.parse()?;
+
+        #[cfg(any(feature = "gzip", feature = "brotli"))]
+        self.add_accept_encoding();
+
+        let deadline = self.calculate_deadline()?;
+
+        let request_fn = |req: Request| {
+            let reader = payload.into_read();
+            let unit = Unit::new(
+                &req.agent,
+                &req.method,
+                &url,
+                req.headers,
+                &reader,
+                deadline,
+            );
+
+            let history = vec![];
+            // socket is already open.
+            let stream = Stream::new_with_socket(iostream, dst_addr);
+
+            send_receive(&unit, stream, /*is_recycled*/false, reader, &history)
+        };
+
+        let response = if !self.agent.state.middleware.is_empty() {
+            // Clone agent to get a local copy with same lifetime as Payload
+            let agent = self.agent.clone();
+            let chain = &mut agent.state.middleware.iter().map(|mw| mw.as_ref());
+
+            let request_fn = Box::new(request_fn);
+
+            let next = MiddlewareNext { chain, request_fn };
+
+            // // Run middleware chain
+            next.handle(self)?
+        } else {
+            // Run the request_fn without any further indirection.
+            request_fn(self)?
+        };
+
+        if response.status() >= 400 {
+            Err(Error::Status(response.status(), response))
+        } else {
+            Ok(response)
+        }
+    }
+
+    #[cfg_attr(not(any(feature = "gzip", feature = "brotli")), allow(unused_mut))]
     fn do_call(mut self, payload: Payload) -> Result<Response> {
         for h in &self.headers {
             h.validate()?;
@@ -220,6 +278,10 @@ impl Request {
     /// ```
     pub fn send_bytes(self, data: &[u8]) -> Result<Response> {
         self.do_call(Payload::Bytes(data))
+    }
+
+    pub fn send_bytes1(self, data: &[u8], io: impl ReadWrite, dst_addr: SocketAddr) -> Result<Response> {
+        self.do_call1(Payload::Bytes(data), io, dst_addr)
     }
 
     /// Send data as a string.
