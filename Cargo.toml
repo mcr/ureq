@@ -51,6 +51,7 @@ serde = { version = "1", features = ["derive"] }
 env_logger = "0.10"
 rustls = { version = "0.21", features = ["dangerous_configuration"] }
 rustls-pemfile = { version = "1.0" }
+mbedtls = { version = "0.11.0" }
 
 [[example]]
 name = "cureq"
@@ -59,3 +60,7 @@ required-features = ["charset", "cookies", "socks-proxy", "native-tls"]
 [[example]]
 name = "tls_config"
 required-features = ["tls", "native-tls"]
+
+[[example]]
+name = "fdconnect"
+#required-features = ["tls", "native-tls"]
